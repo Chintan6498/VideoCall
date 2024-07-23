@@ -1,0 +1,17 @@
+export const color = {
+  white: '#FFFFFF',
+  black: '#000000',
+  grey: '#ccc',
+  orange: '#ff9000',
+  lightGrey: '#f5f5f5',
+  red: 'red',
+  transparent: 'transparent',
+  primary: '#7F4A8D',
+  collapse: '#E520271A',
+  dashBg: '#F9F9FB',
+  chevron: '#CECBCB',
+  listOne: '#FEF6F0',
+  listTwo: '#F6F3F5',
+  head: '#F7F7F7',
+  headBorder: '#00000029',
+};
