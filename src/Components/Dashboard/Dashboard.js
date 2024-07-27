@@ -52,7 +52,7 @@ const Dashboard = () => {
       VoiceActivityDetection: true,
     },
   };
-  const baseURL = 'http://192.168.1.2:4040';
+  const baseURL = 'http://192.168.1.11:4040';
   // const baseURL =
   //   'https://37e7-2401-4900-1f3f-3858-c850-180-1810-6bb1.ngrok-free.app';
   const socket = SocketIOClient(baseURL, {
@@ -83,7 +83,7 @@ const Dashboard = () => {
           audio: true,
           video: {
             mandatory: {
-              minWidth: 500, // Provide your own width, height and frame rate here
+              minWidth: 500,
               minHeight: 300,
               minFrameRate: 30,
             },
@@ -93,9 +93,11 @@ const Dashboard = () => {
         })
         .then(stream => {
           setLocalStream(stream);
-          stream.getTracks().forEach(track => {
-            peerConnection.current.addTrack(track, stream);
-          });
+          if (peerConnection.current) {
+            stream.getTracks().forEach(track => {
+              peerConnection.current.addTrack(track, stream);
+            });
+          }
         })
         .catch(error => {
           console.log('Error getting local stream', error);
@@ -215,10 +217,7 @@ const Dashboard = () => {
       };
       await calling(users);
       console.log('Call initiated');
-
-      if (!peerConnection.current) {
-        throw new Error('PeerConnection is null');
-      }
+  
       if (!peerConnection.current) {
         peerConnection.current = new RTCPeerConnection({
           iceServers: [
@@ -228,34 +227,38 @@ const Dashboard = () => {
           ],
         });
       }
-
-      const sessionDescription = await peerConnection.current.createOffer();
-
-      await peerConnection.current.setLocalDescription(sessionDescription);
+  
+      const offer = await peerConnection.current.createOffer(sessionConstraints);
+      await peerConnection.current.setLocalDescription(offer);
+      
       sendCall({
         calleeId: otherUserId.current,
-        rtcMessage: sessionDescription,
+        rtcMessage: offer,
       });
       setType('OUTGOING_CALL');
     } catch (err) {
       console.error('Error in processCall:', err);
-      // Handle the error (e.g., show an error message to the user)
     }
-  };
+  };  
   function sendCall(data) {
     socket.emit('call', data);
   }
   const processAccept = async () => {
     InCallManager.stopRingtone();
-    peerConnection.current.setRemoteDescription(
-      new RTCSessionDescription(remoteRTCMessage.current),
-    );
-    const sessionDescription = await peerConnection.current.createAnswer();
-    await peerConnection.current.setLocalDescription(sessionDescription);
-    answerCall({
-      callerId: otherUserId.current,
-      rtcMessage: sessionDescription,
-    });
+    try {
+      await peerConnection.current.setRemoteDescription(
+        new RTCSessionDescription(remoteRTCMessage.current)
+      );
+      const answer = await peerConnection.current.createAnswer();
+      await peerConnection.current.setLocalDescription(answer);
+      answerCall({
+        callerId: otherUserId.current,
+        rtcMessage: answer,
+      });
+      setType('WEBRTC_ROOM');
+    } catch (error) {
+      console.error('Error in processAccept:', error);
+    }
   };
   function answerCall(data) {
     socket.emit('answerCall', data);
@@ -267,16 +270,19 @@ const Dashboard = () => {
       peerConnection.current.onicecandidate = null;
       peerConnection.current.close();
       peerConnection.current = null;
-      // peerConnection.current._unregisterEvents();
-      // peerConnection.current.close();
-      // peerConnection.current = null;
     }
 
     if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
+      localStream.getTracks().forEach(track => {
+        track.stop();
+        localStream.removeTrack(track);
+      });
     }
     if (remoteStream) {
-      remoteStream.getTracks().forEach(track => track.stop());
+      remoteStream.getTracks().forEach(track => {
+        track.stop();
+        remoteStream.removeTrack(track);
+      });
     }
 
     setRemoteStream(null);
@@ -294,17 +300,37 @@ const Dashboard = () => {
 
     peerConnection.current = new RTCPeerConnection({
       iceServers: [
-        {
-          urls: 'stun:stun.l.google.com:19302',
-        },
-        {
-          urls: 'stun:stun1.l.google.com:19302',
-        },
-        {
-          urls: 'stun:stun2.l.google.com:19302',
-        },
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
       ],
     });
+  
+    // Re-attach event listeners
+    peerConnection.current.ontrack = event => {
+      if (event.streams && event.streams[0]) {
+        setRemoteStream(event.streams[0]);
+      } else {
+        const inboundStream = new MediaStream();
+        inboundStream.addTrack(event.track);
+        setRemoteStream(inboundStream);
+      }
+    };
+  
+    peerConnection.current.onicecandidate = event => {
+      if (event.candidate) {
+        sendICEcandidate({
+          calleeId: otherUserId.current,
+          rtcMessage: {
+            label: event.candidate.sdpMLineIndex,
+            id: event.candidate.sdpMid,
+            candidate: event.candidate.candidate,
+          },
+        });
+      } else {
+        console.log('End of candidates.');
+      }
+    };
 
     setupMediaDevices();
   };
