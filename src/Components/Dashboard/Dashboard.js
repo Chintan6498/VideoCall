@@ -65,43 +65,47 @@ const Dashboard = () => {
     InCallManager.setSpeakerphoneOn(true);
   }, []);
   const setupMediaDevices = () => {
-    let isFront = true;
-
-    mediaDevices.enumerateDevices().then(sourceInfos => {
-      let videoSourceId;
-      for (let i = 0; i < sourceInfos.length; i++) {
-        const sourceInfo = sourceInfos[i];
-        if (
-          sourceInfo.kind == 'videoinput' &&
-          sourceInfo.facing == (isFront ? 'user' : 'environment')
-        ) {
-          videoSourceId = sourceInfo.deviceId;
-        }
-      }
-      mediaDevices
-        .getUserMedia({
-          audio: true,
-          video: {
-            mandatory: {
-              minWidth: 500,
-              minHeight: 300,
-              minFrameRate: 30,
-            },
-            facingMode: isFront ? 'user' : 'environment',
-            optional: videoSourceId ? [{sourceId: videoSourceId}] : [],
-          },
-        })
-        .then(stream => {
-          setLocalStream(stream);
-          if (peerConnection.current) {
-            stream.getTracks().forEach(track => {
-              peerConnection.current.addTrack(track, stream);
-            });
+    return new Promise((resolve, reject) => {
+      let isFront = true;
+  
+      mediaDevices.enumerateDevices().then(sourceInfos => {
+        let videoSourceId;
+        for (let i = 0; i < sourceInfos.length; i++) {
+          const sourceInfo = sourceInfos[i];
+          if (
+            sourceInfo.kind == 'videoinput' &&
+            sourceInfo.facing == (isFront ? 'user' : 'environment')
+          ) {
+            videoSourceId = sourceInfo.deviceId;
           }
-        })
-        .catch(error => {
-          console.log('Error getting local stream', error);
-        });
+        }
+        mediaDevices
+          .getUserMedia({
+            audio: true,
+            video: {
+              mandatory: {
+                minWidth: 500,
+                minHeight: 300,
+                minFrameRate: 30,
+              },
+              facingMode: isFront ? 'user' : 'environment',
+              optional: videoSourceId ? [{sourceId: videoSourceId}] : [],
+            },
+          })
+          .then(stream => {
+            setLocalStream(stream);
+            if (peerConnection.current) {
+              stream.getTracks().forEach(track => {
+                peerConnection.current.addTrack(track, stream);
+              });
+            }
+            resolve();
+          })
+          .catch(error => {
+            console.log('Error getting local stream', error);
+            reject(error);
+          });
+      });
     });
   };
   useEffect(() => {
@@ -144,7 +148,7 @@ const Dashboard = () => {
     });
 
     // setup Media Device
-    setupMediaDevices();
+    // setupMediaDevices();
 
     peerConnection.current.ontrack = event => {
       // Check if the event.streams array contains a valid MediaStream
@@ -193,24 +197,23 @@ const Dashboard = () => {
   const handleIncomingCall = callerInfo => {
     // Play ringtone
     InCallManager.startRingtone('_DEFAULT_');
-    // Show incoming call UI
-    // You can use a modal or navigate to a call screen
   };
 
-  useEffect(() => {
-    InCallManager.start();
+  const startCall = () => {
+    InCallManager.start({media: 'video'});
     InCallManager.setKeepScreenOn(true);
     InCallManager.setForceSpeakerphoneOn(true);
+  };
 
-    return () => {
-      InCallManager.stop();
-    };
-  }, []);
+  const endCall = () => {
+    InCallManager.stop();
+  };
 
   function sendICEcandidate(data) {
     socket.emit('ICEcandidate', data);
   }
   const processCall = async userId => {
+    await setupMediaDevices();
     try {
       const users = {
         userId: userId,
@@ -227,27 +230,32 @@ const Dashboard = () => {
           ],
         });
       }
-  
-      const offer = await peerConnection.current.createOffer(sessionConstraints);
+
+      const offer = await peerConnection.current.createOffer(
+        sessionConstraints,
+      );
       await peerConnection.current.setLocalDescription(offer);
-      
+
       sendCall({
         calleeId: otherUserId.current,
         rtcMessage: offer,
       });
+      startCall();
       setType('OUTGOING_CALL');
     } catch (err) {
       console.error('Error in processCall:', err);
     }
-  };  
+  };
   function sendCall(data) {
     socket.emit('call', data);
   }
   const processAccept = async () => {
     InCallManager.stopRingtone();
+    await setupMediaDevices();
+    startCall();
     try {
       await peerConnection.current.setRemoteDescription(
-        new RTCSessionDescription(remoteRTCMessage.current)
+        new RTCSessionDescription(remoteRTCMessage.current),
       );
       const answer = await peerConnection.current.createAnswer();
       await peerConnection.current.setLocalDescription(answer);
@@ -265,6 +273,7 @@ const Dashboard = () => {
   }
   const leave = async () => {
     InCallManager.stopRingtone();
+    endCall();
     if (peerConnection.current) {
       peerConnection.current.ontrack = null;
       peerConnection.current.onicecandidate = null;
@@ -300,9 +309,9 @@ const Dashboard = () => {
 
     peerConnection.current = new RTCPeerConnection({
       iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
+        {urls: 'stun:stun.l.google.com:19302'},
+        {urls: 'stun:stun1.l.google.com:19302'},
+        {urls: 'stun:stun2.l.google.com:19302'},
       ],
     });
   
@@ -332,7 +341,7 @@ const Dashboard = () => {
       }
     };
 
-    setupMediaDevices();
+    // setupMediaDevices();
   };
 
   const getScreen = type => {
