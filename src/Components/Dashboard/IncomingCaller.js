@@ -4,7 +4,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import {moderateScale} from '../../Common/styles/Dimensions';
 import {color} from '../../Common/styles/theme';
 import {fontFamily} from '../../Common/styles/fonts';
-const IncomingCaller = ({processAccept, leave, setType}) => {
+const IncomingCaller = ({processAccept, leave, setType,callerName}) => {
   return (
     <View
       style={{
@@ -26,7 +26,7 @@ const IncomingCaller = ({processAccept, leave, setType}) => {
             color: '#D0D4DD',
             textTransform: 'capitalize',
           }}>
-          Call From ....
+          {callerName ? callerName : 'Unknown'}
         </Text>
       </View>
       <View

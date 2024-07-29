@@ -27,6 +27,7 @@ const Dashboard = () => {
   const [remoteStream, setRemoteStream] = useState(null);
   const [localMicOn, setLocalMicOn] = useState(true);
   const [localWebcamOn, setLocalWebcamOn] = useState(true);
+  const [callerName, setCallerName] = useState('');
   const otherUserId = useRef(null);
   const peerConnection = useRef(
     new RTCPeerConnection({
@@ -52,7 +53,7 @@ const Dashboard = () => {
       VoiceActivityDetection: true,
     },
   };
-  const baseURL = 'http://192.168.1.11:4040';
+  const baseURL = 'http://192.168.1.8:4040';
   // const baseURL =
   //   'https://37e7-2401-4900-1f3f-3858-c850-180-1810-6bb1.ngrok-free.app';
   const socket = SocketIOClient(baseURL, {
@@ -112,6 +113,7 @@ const Dashboard = () => {
     socket.on('newCall', data => {
       remoteRTCMessage.current = data.rtcMessage;
       otherUserId.current = data.callerId;
+      setCallerName(data.callerName);
       setType('INCOMING_CALL');
     });
     socket.on('callAnswered', data => {
@@ -212,7 +214,7 @@ const Dashboard = () => {
   function sendICEcandidate(data) {
     socket.emit('ICEcandidate', data);
   }
-  const processCall = async userId => {
+  const processCall = async (userId, name) => {
     await setupMediaDevices();
     try {
       const users = {
@@ -241,6 +243,7 @@ const Dashboard = () => {
         rtcMessage: offer,
       });
       startCall();
+      setCallerName(name);
       setType('OUTGOING_CALL');
     } catch (err) {
       console.error('Error in processCall:', err);
@@ -365,10 +368,17 @@ const Dashboard = () => {
             processAccept={processAccept}
             leave={leave}
             setType={setType}
+            callerName={callerName}
           />
         );
       case 'OUTGOING_CALL':
-        return <OutgoingCaller leave={leave} setType={setType} />;
+        return (
+          <OutgoingCaller
+            leave={leave}
+            setType={setType}
+            calleeName={callerName}
+          />
+        );
       case 'WEBRTC_ROOM':
         return (
           <WebRtcRoom

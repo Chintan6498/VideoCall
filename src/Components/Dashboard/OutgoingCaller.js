@@ -5,7 +5,7 @@ import {moderateScale} from '../../Common/styles/Dimensions';
 import {color} from '../../Common/styles/theme';
 import {fontFamily} from '../../Common/styles/fonts';
 
-const OutgoingCaller = ({setType, leave}) => {
+const OutgoingCaller = ({setType, leave, calleeName}) => {
   return (
     <View
       style={{
@@ -27,7 +27,7 @@ const OutgoingCaller = ({setType, leave}) => {
             color: '#D0D4DD',
             textTransform: 'capitalize',
           }}>
-          Calling To...
+          {calleeName}
         </Text>
       </View>
       <View

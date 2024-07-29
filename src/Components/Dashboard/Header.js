@@ -90,7 +90,7 @@ const Header = ({
       <TouchableOpacity
         onPress={() => {
           setType('OUTGOING_CALL');
-          handleCall(item._id);
+          handleCall(item._id, `${item.firstName} ${item.lastName}`);
           otherUserId.current = item.mobileNumber;
         }}
         style={{
