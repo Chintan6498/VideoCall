@@ -17,6 +17,7 @@ import {screen} from '../../Common/styles/Sizing';
 import {AuthContext} from '../../../services/AuthContext';
 import {calling} from '../../../services/common.services';
 import messaging from '@react-native-firebase/messaging';
+import { baseURL } from '../../../services/config';
 
 const Dashboard = () => {
   const {auth, setAuth} = useContext(AuthContext);
@@ -32,15 +33,9 @@ const Dashboard = () => {
   const peerConnection = useRef(
     new RTCPeerConnection({
       iceServers: [
-        {
-          urls: 'stun:stun.l.google.com:19302',
-        },
-        {
-          urls: 'stun:stun1.l.google.com:19302',
-        },
-        {
-          urls: 'stun:stun2.l.google.com:19302',
-        },
+        {urls: 'stun:stun.l.google.com:19302'},
+        {urls: 'stun:stun1.l.google.com:19302'},
+        {urls: 'stun:stun2.l.google.com:19302'},
       ],
     }),
   );
@@ -53,10 +48,8 @@ const Dashboard = () => {
       VoiceActivityDetection: true,
     },
   };
-  const baseURL = 'http://192.168.1.8:4040';
-  // const baseURL =
-  //   'https://37e7-2401-4900-1f3f-3858-c850-180-1810-6bb1.ngrok-free.app';
-  const socket = SocketIOClient(baseURL, {
+  const url = baseURL.replace(/\/api\/?$/, '');
+  const socket = SocketIOClient(url, {
     transports: ['websocket'],
     query: {
       callerId,
@@ -65,32 +58,29 @@ const Dashboard = () => {
   useEffect(() => {
     InCallManager.setSpeakerphoneOn(true);
   }, []);
+  useEffect(() => {
+    setupSocketListeners();
+    setPeerConnection();
+    return () => {
+      removeSocketListeners();
+    };
+  }, []);
+  useEffect(() => {
+    const unsubscribe = messaging().onMessage(async remoteMessage => {
+      if (remoteMessage.data.callerId) {
+        handleIncomingCall(remoteMessage.data);
+      }
+    });
+    return unsubscribe;
+  }, []);
   const setupMediaDevices = () => {
     return new Promise((resolve, reject) => {
-      let isFront = true;
-  
-      mediaDevices.enumerateDevices().then(sourceInfos => {
-        let videoSourceId;
-        for (let i = 0; i < sourceInfos.length; i++) {
-          const sourceInfo = sourceInfos[i];
-          if (
-            sourceInfo.kind == 'videoinput' &&
-            sourceInfo.facing == (isFront ? 'user' : 'environment')
-          ) {
-            videoSourceId = sourceInfo.deviceId;
-          }
-        }
         mediaDevices
           .getUserMedia({
             audio: true,
             video: {
-              mandatory: {
-                minWidth: 500,
-                minHeight: 300,
-                minFrameRate: 30,
-              },
-              facingMode: isFront ? 'user' : 'environment',
-              optional: videoSourceId ? [{sourceId: videoSourceId}] : [],
+              frameRate: 30,
+              facingMode: 'user',
             },
           })
           .then(stream => {
@@ -107,64 +97,28 @@ const Dashboard = () => {
             reject(error);
           });
       });
+  };
+  const createPeerConnection = () => {
+    return new RTCPeerConnection({
+      iceServers: [
+        {urls: 'stun:stun.l.google.com:19302'},
+        {urls: 'stun:stun1.l.google.com:19302'},
+        {urls: 'stun:stun2.l.google.com:19302'},
+      ],
     });
   };
-  useEffect(() => {
-    socket.on('newCall', data => {
-      remoteRTCMessage.current = data.rtcMessage;
-      otherUserId.current = data.callerId;
-      setCallerName(data.callerName);
-      setType('INCOMING_CALL');
-    });
-    socket.on('callAnswered', data => {
-      remoteRTCMessage.current = data.rtcMessage;
-      peerConnection.current.setRemoteDescription(
-        new RTCSessionDescription(remoteRTCMessage.current),
-      );
-      setType('WEBRTC_ROOM');
-    });
 
-    socket.on('ICEcandidate', data => {
-      let message = data.rtcMessage;
-
-      if (peerConnection.current) {
-        peerConnection?.current
-          .addIceCandidate(
-            new RTCIceCandidate({
-              candidate: message.candidate,
-              sdpMid: message.id,
-              sdpMLineIndex: message.label,
-            }),
-          )
-          .then(data => {
-            console.log('SUCCESS');
-          })
-          .catch(err => {
-            console.log('Error', err);
-          });
-      }
-    });
-    socket.on('callEnded', data => {
-      console.log('Call ended by', data.sender);
-      leave(); // Cleanup when receiving callEnded event
-    });
-
-    // setup Media Device
-    // setupMediaDevices();
-
+  const setPeerConnection = () => {
     peerConnection.current.ontrack = event => {
-      // Check if the event.streams array contains a valid MediaStream
       if (event.streams && event.streams[0]) {
         setRemoteStream(event.streams[0]);
       } else {
-        // If not, create a new MediaStream and add the track to it
         const inboundStream = new MediaStream();
         inboundStream.addTrack(event.track);
         setRemoteStream(inboundStream);
       }
     };
 
-    // Setup ice handling
     peerConnection.current.onicecandidate = event => {
       if (event.candidate) {
         sendICEcandidate({
@@ -179,25 +133,61 @@ const Dashboard = () => {
         console.log('End of candidates.');
       }
     };
+  };
+  const setupSocketListeners = () => {
+    socket.on('newCall', handleNewCall);
+    socket.on('callAnswered', handleCallAnswered);
+    socket.on('ICEcandidate', handleICECandidate);
+    socket.on('callEnded', handleCallEnded);
+  };
+  const removeSocketListeners = () => {
+    socket.off('newCall', handleNewCall);
+    socket.off('callAnswered', handleCallAnswered);
+    socket.off('ICEcandidate', handleICECandidate);
+    socket.off('callEnded', handleCallEnded);
+  };
 
-    return () => {
-      socket.off('newCall');
-      socket.off('callAnswered');
-      socket.off('ICEcandidate');
-      socket.off('callEnded');
-    };
-  }, []);
-  useEffect(() => {
-    const unsubscribe = messaging().onMessage(async remoteMessage => {
-      if (remoteMessage.data.callerId) {
-        handleIncomingCall(remoteMessage.data);
-      }
-    });
+  const handleNewCall = data => {
+    remoteRTCMessage.current = data.rtcMessage;
+    otherUserId.current = data.callerId;
+    setCallerName(data.callerName);
+    setType('INCOMING_CALL');
+  };
 
-    return unsubscribe;
-  }, []);
+  const handleCallAnswered = async data => {
+    remoteRTCMessage.current = data.rtcMessage;
+    peerConnection.current.setRemoteDescription(
+      new RTCSessionDescription(remoteRTCMessage.current),
+    );
+    setType('WEBRTC_ROOM');
+  };
+
+  const handleICECandidate = async data => {
+    let message = data.rtcMessage;
+    if (peerConnection.current) {
+      peerConnection?.current
+        .addIceCandidate(
+          new RTCIceCandidate({
+            candidate: message.candidate,
+            sdpMid: message.id,
+            sdpMLineIndex: message.label,
+          }),
+        )
+        .then(data => {
+          console.log('SUCCESS');
+        })
+        .catch(err => {
+          console.log('Error', err);
+        });
+    }
+  };
+
+  const handleCallEnded = data => {
+    console.log('Call ended by', data.sender);
+    leave();
+  };
+
   const handleIncomingCall = callerInfo => {
-    // Play ringtone
     InCallManager.startRingtone('_DEFAULT_');
   };
 
@@ -206,9 +196,38 @@ const Dashboard = () => {
     InCallManager.setKeepScreenOn(true);
     InCallManager.setForceSpeakerphoneOn(true);
   };
-
-  const endCall = () => {
+  const endCall = async () => {
     InCallManager.stop();
+    if (peerConnection.current) {
+      peerConnection.current.ontrack = null;
+      peerConnection.current.onicecandidate = null;
+      peerConnection.current.close();
+      peerConnection.current = null;
+    }
+    const stream = await mediaDevices.getUserMedia({
+      audio: true,
+      video: true
+    });
+    if (stream) {
+      stream.getTracks().forEach(track => {
+        track.stop();
+        stream.removeTrack(track);
+      });
+    }
+    if (localStream) {
+      localStream.getTracks().forEach(track => {
+        track.stop();
+        localStream.removeTrack(track);
+        console.log('hello Local');
+      });
+    }
+    if (remoteStream) {
+      remoteStream.getTracks().forEach(track => {
+        track.stop();
+        remoteStream.removeTrack(track);
+        console.log('hello Remote');
+      });
+    }
   };
 
   function sendICEcandidate(data) {
@@ -222,20 +241,11 @@ const Dashboard = () => {
       };
       await calling(users);
       console.log('Call initiated');
-  
       if (!peerConnection.current) {
-        peerConnection.current = new RTCPeerConnection({
-          iceServers: [
-            {urls: 'stun:stun.l.google.com:19302'},
-            {urls: 'stun:stun1.l.google.com:19302'},
-            {urls: 'stun:stun2.l.google.com:19302'},
-          ],
-        });
+        peerConnection.current = createPeerConnection();
       }
 
-      const offer = await peerConnection.current.createOffer(
-        sessionConstraints,
-      );
+      const offer = await peerConnection.current.createOffer();
       await peerConnection.current.setLocalDescription(offer);
 
       sendCall({
@@ -254,6 +264,7 @@ const Dashboard = () => {
   }
   const processAccept = async () => {
     InCallManager.stopRingtone();
+    InCallManager.stop();
     await setupMediaDevices();
     startCall();
     try {
@@ -276,75 +287,23 @@ const Dashboard = () => {
   }
   const leave = async () => {
     InCallManager.stopRingtone();
-    endCall();
-    if (peerConnection.current) {
-      peerConnection.current.ontrack = null;
-      peerConnection.current.onicecandidate = null;
-      peerConnection.current.close();
-      peerConnection.current = null;
-    }
-
-    if (localStream) {
-      localStream.getTracks().forEach(track => {
-        track.stop();
-        localStream.removeTrack(track);
-      });
-    }
-    if (remoteStream) {
-      remoteStream.getTracks().forEach(track => {
-        track.stop();
-        remoteStream.removeTrack(track);
-      });
-    }
-
-    setRemoteStream(null);
-    setLocalStream(null);
+    InCallManager.stop();
     if (otherUserId.current) {
       socket.emit('endCall', {
         calleeId: otherUserId.current,
         callerId: callerId,
       });
     }
+    endCall();
+    setRemoteStream(null);
+    setLocalStream(null);
 
     setType('JOIN');
     otherUserId.current = null;
     remoteRTCMessage.current = null;
 
-    peerConnection.current = new RTCPeerConnection({
-      iceServers: [
-        {urls: 'stun:stun.l.google.com:19302'},
-        {urls: 'stun:stun1.l.google.com:19302'},
-        {urls: 'stun:stun2.l.google.com:19302'},
-      ],
-    });
-  
-    // Re-attach event listeners
-    peerConnection.current.ontrack = event => {
-      if (event.streams && event.streams[0]) {
-        setRemoteStream(event.streams[0]);
-      } else {
-        const inboundStream = new MediaStream();
-        inboundStream.addTrack(event.track);
-        setRemoteStream(inboundStream);
-      }
-    };
-  
-    peerConnection.current.onicecandidate = event => {
-      if (event.candidate) {
-        sendICEcandidate({
-          calleeId: otherUserId.current,
-          rtcMessage: {
-            label: event.candidate.sdpMLineIndex,
-            id: event.candidate.sdpMid,
-            candidate: event.candidate.candidate,
-          },
-        });
-      } else {
-        console.log('End of candidates.');
-      }
-    };
-
-    // setupMediaDevices();
+    peerConnection.current = createPeerConnection();
+    setPeerConnection();
   };
 
   const getScreen = type => {
