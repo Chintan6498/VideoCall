@@ -1,6 +1,6 @@
-const baseURL = 'http://192.168.1.2:4040/api';
-// const baseURL =
-//   'https://37e7-2401-4900-1f3f-3858-c850-180-1810-6bb1.ngrok-free.app/api';
+export const baseURL = 'http://192.168.1.8:4040/api';
+// export const baseURL =
+//   'https://30ac-2401-4900-1f3e-120e-70b0-90af-511d-ee27.ngrok-free.app/api';
 
 export const API_URL = {
   // Auth Details
