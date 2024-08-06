@@ -15,11 +15,11 @@ import WebRtcRoom from './WebRtcRoom';
 import {color} from '../../Common/styles/theme';
 import {screen} from '../../Common/styles/Sizing';
 import {AuthContext} from '../../../services/AuthContext';
-import {calling} from '../../../services/common.services';
+import {addCallRecord, calling, getCallHistory, updateCallRecord} from '../../../services/common.services';
 import messaging from '@react-native-firebase/messaging';
-import { baseURL } from '../../../services/config';
+import {baseURL} from '../../../services/config';
 
-const Dashboard = () => {
+const Dashboard = ({navigation}) => {
   const {auth, setAuth} = useContext(AuthContext);
   const userDetails = auth.userDetails;
   const [userList, setUserList] = useState([]);
@@ -29,6 +29,10 @@ const Dashboard = () => {
   const [localMicOn, setLocalMicOn] = useState(true);
   const [localWebcamOn, setLocalWebcamOn] = useState(true);
   const [callerName, setCallerName] = useState('');
+  const [callHistory, setCallHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(null);
+  const [callStartTime, setCallStartTime] = useState(null);
+  const [callId, setCallId] = useState(null);
   const otherUserId = useRef(null);
   const peerConnection = useRef(
     new RTCPeerConnection({
@@ -56,6 +60,9 @@ const Dashboard = () => {
     },
   });
   useEffect(() => {
+    loadCallHistory(userDetails._id);
+  }, []);
+  useEffect(() => {
     InCallManager.setSpeakerphoneOn(true);
   }, []);
   useEffect(() => {
@@ -73,6 +80,25 @@ const Dashboard = () => {
     });
     return unsubscribe;
   }, []);
+  const addToCallHistory = async (callType, otherUserName, startTime, endTime) => {
+    const duration = endTime - startTime;
+    const newCall = {
+      callType,
+      otherUserName,
+      startTime,
+      endTime,
+      duration
+    };
+    console.log(newCall,'newCall');
+    
+    try {
+      const caller = await addCallRecord(newCall);
+      setCallHistory(prevHistory => [newCall, ...prevHistory]);
+    } catch (error) {
+      console.error('Error adding call to history:', error);
+    }
+  };
+
   const setupMediaDevices = () => {
     return new Promise((resolve, reject) => {
         mediaDevices
@@ -152,6 +178,8 @@ const Dashboard = () => {
     otherUserId.current = data.callerId;
     setCallerName(data.callerName);
     setType('INCOMING_CALL');
+    addToCallHistory('incoming', data.callerName, new Date());
+    setCallStartTime(Date.now());
   };
 
   const handleCallAnswered = async data => {
@@ -206,7 +234,7 @@ const Dashboard = () => {
     }
     const stream = await mediaDevices.getUserMedia({
       audio: true,
-      video: true
+      video: true,
     });
     if (stream) {
       stream.getTracks().forEach(track => {
@@ -239,12 +267,14 @@ const Dashboard = () => {
       const users = {
         userId: userId,
       };
-      await calling(users);
+      const callerId= await calling(users);
       console.log('Call initiated');
+      setCallId(callerId.data.callId)
       if (!peerConnection.current) {
         peerConnection.current = createPeerConnection();
       }
-
+      addToCallHistory('outgoing', name, new Date());
+      setCallStartTime(Date.now());
       const offer = await peerConnection.current.createOffer();
       await peerConnection.current.setLocalDescription(offer);
 
@@ -286,6 +316,22 @@ const Dashboard = () => {
     socket.emit('answerCall', data);
   }
   const leave = async () => {
+    const endTime = Date.now();
+    if (callStartTime) {
+      // await addToCallHistory(
+      //   type === 'OUTGOING_CALL' ? 'outgoing' : 'incoming',
+      //   callerName,
+      //   callStartTime,
+      //   endTime
+      // );
+      await updateCallRecord(callId, {
+        endTime: new Date(endTime).toISOString(),
+        status: 'ended', // Or whatever status you need to set
+      });
+
+    }
+    setCallStartTime(null);
+
     InCallManager.stopRingtone();
     InCallManager.stop();
     if (otherUserId.current) {
@@ -306,6 +352,18 @@ const Dashboard = () => {
     setPeerConnection();
   };
 
+  const loadCallHistory = async (userId) => {
+    try {
+      const history = await getCallHistory(userId);
+      setCallHistory(history.data);
+    } catch (error) {
+      console.error('Error loading call history:', error);
+    }
+  };
+  const refreshCallHistory = () => {
+    loadCallHistory();
+  };
+
   const getScreen = type => {
     switch (type) {
       case 'JOIN':
@@ -318,6 +376,11 @@ const Dashboard = () => {
               handleCall={processCall}
               otherUserId={otherUserId}
               setType={setType}
+              callHistory={callHistory}
+              showHistory={showHistory}
+              setShowHistory={setShowHistory}
+              refreshCallHistory={refreshCallHistory}
+              navigation={navigation}
             />
           </View>
         );

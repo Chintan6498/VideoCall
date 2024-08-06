@@ -97,3 +97,49 @@ export const endCalling = (data, message = false) => {
       });
   });
 };
+export const addCallRecord = (data, message = false) => {
+  return new Promise((resolve, reject) => {
+    apiClient({
+      url: `${API_URL.CALL_HISTORY}`,
+      method: 'POST',
+      data,
+      message,
+    })
+      .then(res => {
+        resolve(res);
+      })
+      .catch(error => {
+        reject(error);
+      });
+  });
+};
+export const getCallHistory = (userId, message = false) => {
+  return new Promise((resolve, reject) => {
+    apiClient({
+      url: `${API_URL.CALL_HISTORY}/${userId}`,
+      method: 'GET',
+      message,
+    })
+      .then(res => {
+        resolve(res);
+      })
+      .catch(error => {
+        reject(error);
+      });
+  });
+};
+export const updateCallRecord = (userId, message = false) => {
+  return new Promise((resolve, reject) => {
+    apiClient({
+      url: `${API_URL.CALL_HISTORY}/${userId}`,
+      method: 'PUT',
+      message,
+    })
+      .then(res => {
+        resolve(res);
+      })
+      .catch(error => {
+        reject(error);
+      });
+  });
+};

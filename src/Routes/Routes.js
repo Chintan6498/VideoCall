@@ -6,6 +6,7 @@ import Login from '../Components/Auth/Login';
 import Registration from '../Components/Auth/Registration';
 import Dashboard from '../Components/Dashboard/Dashboard';
 import {AuthContext} from '../../services/AuthContext';
+import RecentCallHistory from '../Components/Dashboard/RecentCallHistory';
 const Stack = createNativeStackNavigator();
 const authScreens = () => {
   return (
@@ -30,6 +31,11 @@ const homeScreens = () => {
         name="Dashboard"
         options={{headerShown: false}}
         component={Dashboard}
+      />
+      <Stack.Screen
+        name="RecentCallHistory"
+        options={{headerShown: false}}
+        component={RecentCallHistory}
       />
     </Stack.Navigator>
   );
