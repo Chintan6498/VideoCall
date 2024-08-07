@@ -340,6 +340,7 @@ const Dashboard = ({navigation}) => {
         callerId: callerId,
       });
     }
+    refreshCallHistory();
     endCall();
     setRemoteStream(null);
     setLocalStream(null);
@@ -361,7 +362,7 @@ const Dashboard = ({navigation}) => {
     }
   };
   const refreshCallHistory = () => {
-    loadCallHistory();
+    loadCallHistory(userDetails._id);
   };
 
   const getScreen = type => {
