@@ -1,4 +1,4 @@
-import {StyleSheet, View} from 'react-native';
+import {Alert, StyleSheet, View} from 'react-native';
 import React, {useContext, useEffect, useRef, useState} from 'react';
 import IncomingCaller from './IncomingCaller';
 import Header from './Header';
@@ -15,7 +15,12 @@ import WebRtcRoom from './WebRtcRoom';
 import {color} from '../../Common/styles/theme';
 import {screen} from '../../Common/styles/Sizing';
 import {AuthContext} from '../../../services/AuthContext';
-import {addCallRecord, calling, getCallHistory, updateCallRecord} from '../../../services/common.services';
+import {
+  addCallRecord,
+  calling,
+  getCallHistory,
+  updateCallRecord,
+} from '../../../services/common.services';
 import messaging from '@react-native-firebase/messaging';
 import {baseURL} from '../../../services/config';
 
@@ -80,17 +85,22 @@ const Dashboard = ({navigation}) => {
     });
     return unsubscribe;
   }, []);
-  const addToCallHistory = async (callType, otherUserName, startTime, endTime) => {
+  const addToCallHistory = async (
+    callType,
+    otherUserName,
+    startTime,
+    endTime,
+  ) => {
     const duration = endTime - startTime;
     const newCall = {
       callType,
       otherUserName,
       startTime,
       endTime,
-      duration
+      duration,
     };
-    console.log(newCall,'newCall');
-    
+    console.log(newCall, 'newCall');
+
     try {
       const caller = await addCallRecord(newCall);
       setCallHistory(prevHistory => [newCall, ...prevHistory]);
@@ -101,28 +111,29 @@ const Dashboard = ({navigation}) => {
 
   const setupMediaDevices = () => {
     return new Promise((resolve, reject) => {
-        mediaDevices
-          .getUserMedia({
-            audio: true,
-            video: {
-              frameRate: 30,
-              facingMode: 'user',
-            },
-          })
-          .then(stream => {
-            setLocalStream(stream);
-            if (peerConnection.current) {
-              stream.getTracks().forEach(track => {
-                peerConnection.current.addTrack(track, stream);
-              });
-            }
-            resolve();
-          })
-          .catch(error => {
-            console.log('Error getting local stream', error);
-            reject(error);
-          });
-      });
+      mediaDevices
+        .getUserMedia({
+          audio: true,
+          video: {
+            frameRate: 30,
+            facingMode: 'user',
+          },
+        })
+        .then(stream => {
+          stream.getAudioTracks().forEach(track => (track.enabled = true));
+          setLocalStream(stream);
+          if (peerConnection.current) {
+            stream.getTracks().forEach(track => {
+              peerConnection.current.addTrack(track, stream);
+            });
+          }
+          resolve();
+        })
+        .catch(error => {
+          console.log('Error getting local stream', error);
+          reject(error);
+        });
+    });
   };
   const createPeerConnection = () => {
     return new RTCPeerConnection({
@@ -165,20 +176,50 @@ const Dashboard = ({navigation}) => {
     socket.on('callAnswered', handleCallAnswered);
     socket.on('ICEcandidate', handleICECandidate);
     socket.on('callEnded', handleCallEnded);
+    socket.on('busySignal', handleBusySignal);
+    socket.on('callRejected', handleCallRejected);
   };
   const removeSocketListeners = () => {
     socket.off('newCall', handleNewCall);
     socket.off('callAnswered', handleCallAnswered);
     socket.off('ICEcandidate', handleICECandidate);
     socket.off('callEnded', handleCallEnded);
+    socket.off('busySignal', handleBusySignal);
+    socket.off('callRejected', handleCallRejected);
   };
-
+  const handleBusySignal = data => {
+    InCallManager.stopRingtone();
+    InCallManager.start({media: 'audio'});
+    InCallManager.startRingback();
+    setTimeout(() => {
+      console.log('Heyyyyyyyy--------yyyyyyy');
+      InCallManager.stop();
+      setType('JOIN');
+      Alert.alert(
+        'Call Failed',
+        'The person you are trying to reach is busy in Another Call.',
+      );
+      if (localStream) {
+        localStream.getTracks().forEach(track => {
+          track.stop();
+          localStream.removeTrack(track);
+        });
+      }
+    }, 10000);
+  };
+  const handleCallRejected = data => {
+    console.log('Call Rejected');
+    console.log('Call rejected by:', data.calleeId);
+    InCallManager.stopRingtone();
+    setType('JOIN');
+    setCallStatus('rejected');
+  };
   const handleNewCall = data => {
+    InCallManager.startRingtone('_DEFAULT_');
     remoteRTCMessage.current = data.rtcMessage;
     otherUserId.current = data.callerId;
     setCallerName(data.callerName);
     setType('INCOMING_CALL');
-    addToCallHistory('incoming', data.callerName, new Date());
     setCallStartTime(Date.now());
   };
 
@@ -246,18 +287,27 @@ const Dashboard = ({navigation}) => {
       localStream.getTracks().forEach(track => {
         track.stop();
         localStream.removeTrack(track);
-        console.log('hello Local');
       });
     }
     if (remoteStream) {
       remoteStream.getTracks().forEach(track => {
         track.stop();
         remoteStream.removeTrack(track);
-        console.log('hello Remote');
       });
     }
   };
-
+  const rejectCall = () => {
+    InCallManager.stopRingtone();
+    InCallManager.stop();
+    socket.emit('rejectCall', {callerId: otherUserId.current});
+    setType('JOIN');
+    // setCallStatus('rejected');
+  };
+  const cutCall = () => {
+    InCallManager.stopRingtone();
+    InCallManager.stop();
+    setType('JOIN');
+  };
   function sendICEcandidate(data) {
     socket.emit('ICEcandidate', data);
   }
@@ -267,13 +317,12 @@ const Dashboard = ({navigation}) => {
       const users = {
         userId: userId,
       };
-      const callerId= await calling(users);
-      console.log('Call initiated');
-      setCallId(callerId.data.callId)
+      // const callerId = await calling(users);
+      // console.log('Call initiated');
+      // setCallId(callerId.data.callId);
       if (!peerConnection.current) {
         peerConnection.current = createPeerConnection();
       }
-      addToCallHistory('outgoing', name, new Date());
       setCallStartTime(Date.now());
       const offer = await peerConnection.current.createOffer();
       await peerConnection.current.setLocalDescription(offer);
@@ -316,20 +365,7 @@ const Dashboard = ({navigation}) => {
     socket.emit('answerCall', data);
   }
   const leave = async () => {
-    const endTime = Date.now();
-    if (callStartTime) {
-      // await addToCallHistory(
-      //   type === 'OUTGOING_CALL' ? 'outgoing' : 'incoming',
-      //   callerName,
-      //   callStartTime,
-      //   endTime
-      // );
-      await updateCallRecord(callId, {
-        endTime: new Date(endTime).toISOString(),
-        status: 'ended', // Or whatever status you need to set
-      });
-
-    }
+    // setIsInCall(false);
     setCallStartTime(null);
 
     InCallManager.stopRingtone();
@@ -344,16 +380,15 @@ const Dashboard = ({navigation}) => {
     endCall();
     setRemoteStream(null);
     setLocalStream(null);
-
+    setLocalMicOn(true);
     setType('JOIN');
     otherUserId.current = null;
     remoteRTCMessage.current = null;
-
     peerConnection.current = createPeerConnection();
     setPeerConnection();
   };
 
-  const loadCallHistory = async (userId) => {
+  const loadCallHistory = async userId => {
     try {
       const history = await getCallHistory(userId);
       setCallHistory(history.data);
@@ -389,7 +424,7 @@ const Dashboard = ({navigation}) => {
         return (
           <IncomingCaller
             processAccept={processAccept}
-            leave={leave}
+            leave={rejectCall}
             setType={setType}
             callerName={callerName}
           />
@@ -397,7 +432,7 @@ const Dashboard = ({navigation}) => {
       case 'OUTGOING_CALL':
         return (
           <OutgoingCaller
-            leave={leave}
+            leave={cutCall}
             setType={setType}
             calleeName={callerName}
           />

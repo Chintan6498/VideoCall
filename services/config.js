@@ -1,6 +1,5 @@
-export const baseURL = 'http://192.168.29.21:4040/api';
-// export const baseURL =
-//   'https://30ac-2401-4900-1f3e-120e-70b0-90af-511d-ee27.ngrok-free.app/api';
+// export const baseURL = 'http://192.168.29.21:4040/api';
+export const baseURL = 'https://videocall.kkpbhadli.in/api'
 
 export const API_URL = {
   // Auth Details

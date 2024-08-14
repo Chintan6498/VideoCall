@@ -26,7 +26,7 @@ const WebRtcRoom = ({
       }}>
       {remoteStream && (
         <RTCView
-          mirror={true}
+          mirror={localWebcamOn ? false : true}
           streamURL={remoteStream.toURL()}
           style={{
             width: '100%',
@@ -38,7 +38,7 @@ const WebRtcRoom = ({
       )}
       {localStream && (
         <RTCView
-          mirror={true}
+          mirror={localWebcamOn ? false : true}
           streamURL={localStream.toURL()}
           style={{
             position: 'absolute',
@@ -57,6 +57,7 @@ const WebRtcRoom = ({
           onPress={() => {
             setType('JOIN');
             leave();
+            setLocalMicOn(true);
           }}
           style={[styles.button, styles.endCallButton]}>
           <Ionicons
@@ -67,9 +68,9 @@ const WebRtcRoom = ({
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => {
-            setLocalMicOn(prev => !prev);
             localStream.getAudioTracks().forEach(track => {
               track.enabled = !track.enabled;
+              setLocalMicOn(!localMicOn);
             });
           }}
           style={styles.button}>

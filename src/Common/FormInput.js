@@ -14,6 +14,7 @@ const FormInput = ({
   labelStyle,
   textInputStyle,
   label,
+  isError = false,
   ...restProps
 }) => {
   return (
@@ -24,7 +25,7 @@ const FormInput = ({
           marginTop: verticalScale(5),
           padding: moderateScale(2),
           borderRadius: moderateScale(5),
-          backgroundColor: color.primary,
+          backgroundColor: isError ? color.red : color.primary,
         }}>
         <TextInput
           style={[styles.textInputStyle, {...textInputStyle}]}
